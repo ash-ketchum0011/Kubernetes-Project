@@ -1,0 +1,208 @@
+#Namespace for all the workloads
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keda-demo
+
+---
+#backend Postgres Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: keda-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "postgres-spc"
+
+---
+#postgres service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: keda-demo
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+
+---
+#frontend Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: keda-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: bitnami/python:3.9
+          command: ["python"]
+          args: ["-m", "http.server", "8080"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "postgres-spc"
+
+---
+#frontend service
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: keda-demo
+spec:
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: frontend
+
+---
+#SecretProviderClass for Azure Key Vault
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: postgres-spc
+  namespace: keda-demo
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"          # set "true" if using Managed Identity
+    useVMManagedIdentity: "true"     # for AKS-managed identity
+    userAssignedIdentityID: "<CLIENT_ID>"  # if using user-assigned identity
+    keyvaultName: "<YOUR_KEYVAULT_NAME>"
+    cloudName: ""                    # leave empty for Azure global
+    objects: |
+      array:
+        - |
+          objectName: POSTGRES-USER
+          objectType: secret
+        - |
+          objectName: POSTGRES-PASSWORD
+          objectType: secret
+        - |
+          objectName: POSTGRES-DB
+          objectType: secret
+    tenantId: "<YOUR_TENANT_ID>"
+  secretObjects:                      # sync Key Vault values into K8s Secret
+    - secretName: postgres-secret
+      type: Opaque
+      data:
+        - objectName: POSTGRES-USER
+          key: POSTGRES_USER
+        - objectName: POSTGRES-PASSWORD
+          key: POSTGRES_PASSWORD
+        - objectName: POSTGRES-DB
+          key: POSTGRES_DB
+
+---
+#Secret for Postgres connection string for KEDA
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-conn-secret
+  namespace: keda-demo
+type: Opaque
+stringData:
+  POSTGRES_CONN_STR: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres.keda-demo.svc.cluster.local:5432/$(POSTGRES_DB)"
+
+---
+#KEDA ScaledObject for frontend deployment
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: frontend-scaledobject
+  namespace: keda-demo
+spec:
+  scaleTargetRef:
+    name: frontend
+  pollingInterval: 10
+  cooldownPeriod: 30
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: POSTGRES_CONN_STR
+        query: "SELECT COUNT(*) FROM task;"
+        targetValue: "5"
+
+
