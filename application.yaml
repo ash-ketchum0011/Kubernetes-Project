@@ -174,7 +174,7 @@ spec:
           key: POSTGRES_DB
 
 ---
-#Secret for Postgres connection string for KEDA
+
 apiVersion: v1
 kind: Secret
 metadata:
@@ -182,7 +182,20 @@ metadata:
   namespace: keda-demo
 type: Opaque
 stringData:
-  POSTGRES_CONN_STR: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres.keda-demo.svc.cluster.local:5432/$(POSTGRES_DB)"
+  POSTGRES_CONN_STR: "postgresql://admin:admin123@postgres.keda-demo.svc.cluster.local:5432/mydb"
+
+---
+
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: postgres-secret-auth
+  namespace: keda-demo
+spec:
+  secretTargetRef:
+    - parameter: POSTGRES_CONN_STR
+      name: postgres-conn-secret
+      key: POSTGRES_CONN_STR
 
 ---
 #KEDA ScaledObject for frontend deployment
@@ -204,5 +217,7 @@ spec:
         connectionFromEnv: POSTGRES_CONN_STR
         query: "SELECT COUNT(*) FROM task;"
         targetValue: "5"
+      authenticationRef:
+      name: postgres-secret-auth
 
 
