@@ -1,3 +1,51 @@
+#SecretProviderClass for Azure Key Vault
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: postgres-spc
+  namespace: keda-demo
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"          # set "true" if using Managed Identity
+    useVMManagedIdentity: "true"     # for AKS-managed identity
+    userAssignedIdentityID: "711c84c6-4623-4592-9bc6-93f25e36929b"  # if using user-assigned identity
+    keyvaultName: "kv-aks-prod-001-unique"
+    cloudName: ""                    # leave empty for Azure global
+    objects: |
+      array:
+        - |
+          objectName: POSTGRES-USER
+          objectType: secret
+        - |
+          objectName: POSTGRES-PASSWORD
+          objectType: secret
+        - |
+          objectName: POSTGRES-DB
+          objectType: secret
+    tenantId: "<YOUR_TENANT_ID>"
+  secretObjects:                      # sync Key Vault values into K8s Secret
+    - secretName: postgres-secret
+      type: Opaque
+      data:
+        - objectName: POSTGRES-USER
+          key: POSTGRES_USER
+        - objectName: POSTGRES-PASSWORD
+          key: POSTGRES_PASSWORD
+        - objectName: POSTGRES-DB
+          key: POSTGRES_DB
+
+---
+#KEDA Postgres ScaledObject and TriggerAuthentication
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-conn-secret
+  namespace: keda-demo
+type: Opaque
+stringData:
+  POSTGRES_CONN_STR: "postgresql://admin:admin123@postgres.keda-demo.svc.cluster.local:5432/mydb"
+---
 #Namespace for all the workloads
 apiVersion: v1
 kind: Namespace
@@ -134,55 +182,6 @@ spec:
       targetPort: 8080
   selector:
     app: frontend
-
----
-#SecretProviderClass for Azure Key Vault
-apiVersion: secrets-store.csi.x-k8s.io/v1
-kind: SecretProviderClass
-metadata:
-  name: postgres-spc
-  namespace: keda-demo
-spec:
-  provider: azure
-  parameters:
-    usePodIdentity: "false"          # set "true" if using Managed Identity
-    useVMManagedIdentity: "true"     # for AKS-managed identity
-    userAssignedIdentityID: "54cddcaa-ecf8-42df-9eb2-ed93e5c9affc"  # if using user-assigned identity
-    keyvaultName: "kv-aks-prod-001-unique"
-    cloudName: ""                    # leave empty for Azure global
-    objects: |
-      array:
-        - |
-          objectName: POSTGRES-USER
-          objectType: secret
-        - |
-          objectName: POSTGRES-PASSWORD
-          objectType: secret
-        - |
-          objectName: POSTGRES-DB
-          objectType: secret
-    tenantId: "<YOUR_TENANT_ID>"
-  secretObjects:                      # sync Key Vault values into K8s Secret
-    - secretName: postgres-secret
-      type: Opaque
-      data:
-        - objectName: POSTGRES-USER
-          key: POSTGRES_USER
-        - objectName: POSTGRES-PASSWORD
-          key: POSTGRES_PASSWORD
-        - objectName: POSTGRES-DB
-          key: POSTGRES_DB
-
----
-#KEDA Postgres ScaledObject and TriggerAuthentication
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-conn-secret
-  namespace: keda-demo
-type: Opaque
-stringData:
-  POSTGRES_CONN_STR: "postgresql://admin:admin123@postgres.keda-demo.svc.cluster.local:5432/mydb"
 
 ---
 #KEDA TriggerAuthentication for Postgres
