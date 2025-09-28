@@ -9,8 +9,8 @@ spec:
   parameters:
     usePodIdentity: "false"          # set "true" if using Managed Identity
     useVMManagedIdentity: "false"     # for AKS-managed identity
-    userAssignedIdentityID: "fd6de5e8-d08c-457c-9a9e-0dc717732233"  # if using user-assigned identity
-    keyvaultName: "kv-aks-prod-001-unique"
+    userAssignedIdentityID: "a11d3f05-b8c2-4925-bacc-db102077de29"  # if using user-assigned identity
+    keyvaultName: "kv-aks-prod-002-unique"
     cloudName: ""                    # leave empty for Azure global
     objects: |
       array:
