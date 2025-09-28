@@ -182,47 +182,4 @@ spec:
   selector:
     app: frontend
 
----
-#KEDA TriggerAuthentication for Postgres
-apiVersion: keda.sh/v1alpha1
-kind: TriggerAuthentication
-metadata:
-  name: postgres-secret-auth
-  namespace: keda-demo
-spec:
-  secretTargetRef:
-    - parameter: host
-      name: postgres-conn-secret
-      key: POSTGRES_CONN_STR  # Will extract host from connection string
-    - parameter: password
-      name: postgres-secret
-      key: POSTGRES_PASSWORD
-
----
-#KEDA ScaledObject for frontend deployment
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: frontend-scaledobject
-  namespace: keda-demo
-spec:
-  scaleTargetRef:
-    name: frontend
-  pollingInterval: 10
-  cooldownPeriod: 30
-  minReplicaCount: 1
-  maxReplicaCount: 5
-  triggers:
-    - type: postgresql
-      metadata:
-        host: "postgres.keda-demo.svc.cluster.local"
-        port: "5432"
-        userName: "admin"  # Direct value since it's not sensitive
-        dbName: "mydb"     # Fixed to match POSTGRES_DB
-        sslmode: "disable"
-        query: "SELECT COUNT(*) FROM task;"
-        targetQueryValue: "1"
-      authenticationRef:
-        name: postgres-secret-auth
-
 
