@@ -8,8 +8,8 @@ spec:
   provider: azure
   parameters:
     usePodIdentity: "false"          # set "true" if using Managed Identity
-    useVMManagedIdentity: "false"     # for AKS-managed identity
-    userAssignedIdentityID: "a11d3f05-b8c2-4925-bacc-db102077de29"  # if using user-assigned identity
+    useVMManagedIdentity: "true"     # for AKS-managed identity
+    userAssignedIdentityID: "ce0d4eeb-6785-47f4-87ca-d3ba1a7c278f"  # if using user-assigned identity
     keyvaultName: "kv-aks-prod-002-unique"
     cloudName: ""                    # leave empty for Azure global
     objects: |
@@ -23,7 +23,7 @@ spec:
         - |
           objectName: POSTGRES-DB
           objectType: secret
-    tenantId: "<YOUR_TENANT_ID>"
+    tenantId: "991e8ae3-42fa-4862-8093-37f16a2c5fca"
   secretObjects:                      # sync Key Vault values into K8s Secret
     - secretName: postgres-secret
       type: Opaque
