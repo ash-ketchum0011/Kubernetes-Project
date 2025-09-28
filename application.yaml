@@ -217,6 +217,6 @@ spec:
         query: "SELECT COUNT(*) FROM task;"
         targetValue: "5"
       authenticationRef:
-      name: postgres-secret-auth
+        name: postgres-secret-auth
 
 
