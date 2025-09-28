@@ -53,46 +53,8 @@ metadata:
   name: keda-demo
 
 ---
-# Database initialization job
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: postgres-init
-  namespace: keda-demo
-spec:
-  template:
-    spec:
-      restartPolicy: OnFailure
-      containers:
-      - name: postgres-init
-        image: postgres:15
-        env:
-        - name: PGHOST
-          value: postgres
-        - name: PGPORT
-          value: "5432"
-        - name: PGUSER
-          value: admin
-        - name: PGPASSWORD
-          value: admin123
-        - name: PGDATABASE
-          value: mydb
-        command:
-        - /bin/bash
-        - -c
-        - |
-          until pg_isready; do
-            echo "Waiting for postgres..."
-            sleep 2
-          done
-          echo "Creating task table..."
-          psql -c "CREATE TABLE IF NOT EXISTS task (id SERIAL PRIMARY KEY, name VARCHAR(100));"
-          echo "Inserting sample data..."
-          psql -c "INSERT INTO task (name) VALUES ('sample task 1'), ('sample task 2');"
-          echo "Database initialized successfully"
-
----
 #backend Postgres Deployment and Service
+#backend Postgres Deployment with Init Container
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -108,38 +70,124 @@ spec:
       labels:
         app: postgres
     spec:
-      containers:
-        - name: postgres
-          image: postgres:15
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_DB
-          volumeMounts:
-            - name: secrets-store
-              mountPath: /mnt/secrets-store
-              readOnly: true
-      volumes:
+      initContainers:
+      - name: postgres-init
+        image: postgres:15
+        env:
+        - name: PGHOST
+          value: "127.0.0.1"  # Connect to localhost since it's in same pod
+        - name: PGPORT
+          value: "5432"
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: PGDATABASE
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Starting database initialization..."
+          
+          # Wait for PostgreSQL to be ready
+          until pg_isready -h 127.0.0.1 -p 5432 -U ${PGUSER}; do
+            echo "Waiting for PostgreSQL to start..."
+            sleep 3
+          done
+          
+          echo "PostgreSQL is ready. Creating schema..."
+          
+          # Create the task table
+          psql -h 127.0.0.1 -p 5432 -U ${PGUSER} -d ${PGDATABASE} -c "
+            CREATE TABLE IF NOT EXISTS task (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(100) NOT NULL,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+          "
+          
+          # Insert sample data
+          psql -h 127.0.0.1 -p 5432 -U ${PGUSER} -d ${PGDATABASE} -c "
+            INSERT INTO task (name) VALUES 
+            ('Initial task 1'),
+            ('Initial task 2'),
+            ('Sample workload')
+            ON CONFLICT DO NOTHING;
+          "
+          
+          # Verify data
+          COUNT=$(psql -h 127.0.0.1 -p 5432 -U ${PGUSER} -d ${PGDATABASE} -t -c "SELECT COUNT(*) FROM task;")
+          echo "Task table initialized with ${COUNT} rows"
+          
+          echo "Database initialization completed successfully"
+        volumeMounts:
         - name: secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: "postgres-spc"
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: secrets-store
+          mountPath: /mnt/secrets-store
+          readOnly: true
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "postgres-spc"
+      - name: postgres-storage
+        emptyDir: {}  # For demo purposes - use PVC for production
 
 ---
 #postgres service
