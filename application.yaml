@@ -192,7 +192,7 @@ metadata:
   namespace: keda-demo
 spec:
   secretTargetRef:
-    - parameter: POSTGRES_CONN_STR
+    - parameter: connection
       name: postgres-conn-secret
       key: POSTGRES_CONN_STR
 
@@ -213,7 +213,6 @@ spec:
   triggers:
     - type: postgresql
       metadata:
-        connectionFromEnv: POSTGRES_CONN_STR
         query: "SELECT COUNT(*) FROM task;"
         targetValue: "5"
       authenticationRef:
